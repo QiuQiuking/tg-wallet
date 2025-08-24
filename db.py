@@ -1,10 +1,18 @@
 import sqlite3
+import os
 from typing import List, Dict
 
-DB_PATH = "watches.db"
+# 使用 Render 的持久化路径
+DATA_DIR = "/opt/render/project/src/data"
+DB_PATH = os.path.join(DATA_DIR, "watches.db")
+
+def ensure_data_dir():
+    """确保数据目录存在"""
+    os.makedirs(DATA_DIR, exist_ok=True)
 
 def init_db():
     """初始化数据库，创建监听表"""
+    ensure_data_dir()
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("""
@@ -19,6 +27,7 @@ def init_db():
 
 def add_watch(chat_id: str, address: str):
     """添加监听地址"""
+    ensure_data_dir()
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
@@ -30,6 +39,7 @@ def add_watch(chat_id: str, address: str):
 
 def remove_watch(chat_id: str, address: str):
     """移除监听地址"""
+    ensure_data_dir()
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(
@@ -41,6 +51,7 @@ def remove_watch(chat_id: str, address: str):
 
 def list_watch(chat_id: str) -> List[str]:
     """列出某个聊天的所有监听地址"""
+    ensure_data_dir()
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("SELECT address FROM watches WHERE chat_id=?", (chat_id,))
@@ -50,6 +61,7 @@ def list_watch(chat_id: str) -> List[str]:
 
 def all_watches() -> Dict[str, List[str]]:
     """返回所有监听记录，按 chat_id 分组"""
+    ensure_data_dir()
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("SELECT chat_id, address FROM watches")
