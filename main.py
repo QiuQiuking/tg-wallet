@@ -161,7 +161,7 @@ async def set_webhook():
         return 'Bot not initialized', 500
     try:
         await bot_app.bot.remove_webhook()
-        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{BOT_TOKEN}"
+        webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME', 'tg-wallet-1-0-1.onrender.com')}/{BOT_TOKEN}"
         success = await bot_app.bot.set_webhook(url=webhook_url)
         if success:
             logger.info(f"Webhook set successfully: {webhook_url}")
@@ -202,20 +202,23 @@ async def init_bot():
         bot_initialized = False
         raise
 
-def run_watcher():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(watcher(bot_app))
+def main():
+    logger.info("Starting application")
+    try:
+        # 同步初始化 bot
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(init_bot())
+        # 启动 watcher 线程
+        if bot_initialized:
+            import threading
+            threading.Thread(target=lambda: asyncio.run(watcher(bot_app)), daemon=True).start()
+        else:
+            logger.error("Cannot start watcher due to bot initialization failure")
+    except Exception as e:
+        logger.error(f"Application startup failed: {e}")
+        raise
+    # 启动 Flask (由 gunicorn 调用时无需 app_flask.run)
+    # app_flask.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)))
 
 if __name__ == "__main__":
-    logger.info("Starting Flask application")
-    # 同步初始化 bot
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(init_bot())
-    # 在单独线程中运行 watcher
-    if bot_initialized:
-        threading.Thread(target=run_watcher, daemon=True).start()
-    else:
-        logger.error("Cannot start watcher due to bot initialization failure")
-    # 启动 Flask
-    app_flask.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)))
+    main()
