@@ -1,4 +1,3 @@
-# main.py
 import asyncio
 import re
 import logging
@@ -98,12 +97,13 @@ async def watcher(app: Application):
                         await app.bot.send_message(cid, f"检测到交易: {tx.get('hash')}")
             last_block = latest
 
-# Flask 路由处理 webhook
 @app_flask.route(f'/{BOT_TOKEN}', methods=['POST'])
 async def webhook():
     global bot_app
+    logging.info("Received webhook request")
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
+        logging.info(f"Webhook update: {json_string}")
         update = Update.de_json(json_string, bot_app.bot)
         await bot_app.process_update(update)
         return 'OK', 200
@@ -123,6 +123,10 @@ async def set_webhook():
 @app_flask.route('/')
 async def index():
     return "TG Wallet Bot is running!"
+
+@app_flask.route('/favicon.ico')
+async def favicon():
+    return '', 204  # 避免 404 错误
 
 async def run_bot():
     global bot_app
