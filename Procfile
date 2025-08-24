@@ -1,1 +1,1 @@
-web: gunicorn main:app
+web: gunicorn --worker-class gevent --workers 1 --timeout 60 main:app_flask
