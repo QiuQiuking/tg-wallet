@@ -4,20 +4,22 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from flask import Flask, request
+import os
 from config import *
 from db import init_db, add_watch, remove_watch, list_watch, all_watches
 from rpc import get_eth_balance_wei, get_block_number, get_block_with_txs, from_wei, to_checksum
-import os
-import threading
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# 初始化 Flask
+# 初始化 Flask 和 bot
 app_flask = Flask(__name__)
-bot_app = None  # 全局 Application 对象
-bot_initialized = False  # 标志位，跟踪 bot 初始化状态
+bot_app = None
+bot_initialized = False
+
+# 正则表达式
+ADDR_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
 
 async def check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     uid = update.effective_user.id
@@ -181,7 +183,7 @@ async def favicon():
     logger.info("Favicon requested")
     return '', 204
 
-async def run_bot():
+async def init_bot():
     global bot_app, bot_initialized
     logger.info("Initializing bot and database")
     try:
@@ -195,32 +197,25 @@ async def run_bot():
         bot_app.add_handler(CommandHandler("list", list_cmd))
         bot_initialized = True
         logger.info("Bot initialized successfully")
-        await watcher(bot_app)  # 直接运行 watcher
     except Exception as e:
         logger.error(f"Bot initialization failed: {e}")
         bot_initialized = False
         raise
 
-def run_flask():
-    global bot_initialized
-    logger.info("Starting Flask application")
-    # 在单独线程中运行异步 bot
+def run_watcher():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    try:
-        thread = threading.Thread(target=lambda: loop.run_until_complete(run_bot()), daemon=True)
-        thread.start()
-        # 等待 bot 初始化完成
-        for _ in range(10):  # 最多等待 10 秒
-            if bot_initialized:
-                break
-            logger.info("Waiting for bot initialization...")
-            threading.Event().wait(1)
-        if not bot_initialized:
-            logger.error("Bot initialization timed out")
-    except Exception as e:
-        logger.error(f"Failed to start bot thread: {e}")
-    app_flask.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)))
+    loop.run_until_complete(watcher(bot_app))
 
 if __name__ == "__main__":
-    run_flask()
+    logger.info("Starting Flask application")
+    # 同步初始化 bot
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(init_bot())
+    # 在单独线程中运行 watcher
+    if bot_initialized:
+        threading.Thread(target=run_watcher, daemon=True).start()
+    else:
+        logger.error("Cannot start watcher due to bot initialization failure")
+    # 启动 Flask
+    app_flask.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)))
