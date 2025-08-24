@@ -4,3 +4,4 @@ gunicorn==22.0.0
 python-dotenv
 requests
 web3
+asgiref==3.8.1
