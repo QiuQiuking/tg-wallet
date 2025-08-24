@@ -1,7 +1,8 @@
 python-telegram-bot==20.7
 flask==2.3.2
-gunicorn==22.0.0
-python-dotenv
-requests
-web3
 asgiref==3.8.1
+gunicorn==22.0.0
+requests==2.31.0
+web3==6.15.1
+gevent==24.2.1
+python-dotenv
