@@ -1,3 +1,6 @@
+from gevent import monkey
+monkey.patch_all()  # 必须在任何导入前调用
+
 import asyncio
 import re
 import logging
@@ -5,13 +8,10 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from flask import Flask, request
 import os
+import threading
 from config import *
 from db import init_db, add_watch, remove_watch, list_watch, all_watches
 from rpc import get_eth_balance_wei, get_block_number, get_block_with_txs, from_wei, to_checksum
-from gevent import monkey
-
-# 打补丁以支持异步
-monkey.patch_all()
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -187,6 +187,10 @@ async def favicon():
     logger.info("Favicon requested")
     return '', 204
 
+@app_flask.route('/debug')
+async def debug():
+    return f"bot_initialized: {bot_initialized}, bot_app: {bot_app is not None}"
+
 async def init_bot():
     global bot_app, bot_initialized
     logger.info("Initializing bot and database")
@@ -207,20 +211,17 @@ async def init_bot():
         bot_initialized = False
         raise
 
-# 在首次请求前初始化
-@app_flask.before_first_request
-def initialize():
-    global bot_app, bot_initialized
-    if not bot_initialized:
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(init_bot())
-            if bot_initialized:
-                import threading
-                threading.Thread(target=lambda: asyncio.run(watcher(bot_app)), daemon=True).start()
-                logger.info("Watcher thread started")
-            else:
-                logger.error("Cannot start watcher due to bot initialization failure")
-        except Exception as e:
-            logger.error(f"Application startup failed: {e}")
+# 手动初始化 bot
+try:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(init_bot())
+    if bot_initialized:
+        threading.Thread(target=lambda: asyncio.run(watcher(bot_app)), daemon=True).start()
+        logger.info("Watcher thread started")
+except Exception as e:
+    logger.error(f"Application startup failed: {e}")
+
+if __name__ == "__main__":
+    logger.info("Starting application in debug mode")
+    app_flask.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)))
