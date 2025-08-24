@@ -8,6 +8,10 @@ import os
 from config import *
 from db import init_db, add_watch, remove_watch, list_watch, all_watches
 from rpc import get_eth_balance_wei, get_block_number, get_block_with_txs, from_wei, to_checksum
+from gevent import monkey
+
+# 打补丁以支持异步
+monkey.patch_all()
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -160,7 +164,7 @@ async def set_webhook():
         logger.error("bot_app not initialized")
         return 'Bot not initialized', 500
     try:
-        await bot_app.bot.remove_webhook()
+        await bot_app.bot.delete_webhook()
         webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME', 'tg-wallet-1-0-1.onrender.com')}/{BOT_TOKEN}"
         success = await bot_app.bot.set_webhook(url=webhook_url)
         if success:
@@ -188,6 +192,7 @@ async def init_bot():
     logger.info("Initializing bot and database")
     try:
         init_db()
+        logger.info(f"BOT_TOKEN: {BOT_TOKEN[:10]}...")  # 隐藏部分 Token
         bot_app = Application.builder().token(BOT_TOKEN).build()
         bot_app.add_handler(CommandHandler("start", start))
         bot_app.add_handler(CallbackQueryHandler(verify_callback, pattern="^verify$"))
@@ -202,23 +207,20 @@ async def init_bot():
         bot_initialized = False
         raise
 
-def main():
-    logger.info("Starting application")
-    try:
-        # 同步初始化 bot
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(init_bot())
-        # 启动 watcher 线程
-        if bot_initialized:
-            import threading
-            threading.Thread(target=lambda: asyncio.run(watcher(bot_app)), daemon=True).start()
-        else:
-            logger.error("Cannot start watcher due to bot initialization failure")
-    except Exception as e:
-        logger.error(f"Application startup failed: {e}")
-        raise
-    # 启动 Flask (由 gunicorn 调用时无需 app_flask.run)
-    # app_flask.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)))
-
-if __name__ == "__main__":
-    main()
+# 在首次请求前初始化
+@app_flask.before_first_request
+def initialize():
+    global bot_app, bot_initialized
+    if not bot_initialized:
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(init_bot())
+            if bot_initialized:
+                import threading
+                threading.Thread(target=lambda: asyncio.run(watcher(bot_app)), daemon=True).start()
+                logger.info("Watcher thread started")
+            else:
+                logger.error("Cannot start watcher due to bot initialization failure")
+        except Exception as e:
+            logger.error(f"Application startup failed: {e}")
